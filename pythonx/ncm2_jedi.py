@@ -225,7 +225,7 @@ try:
     import resource
     import psutil
 
-    mem, *_ = psutil.virtual_memory()
+    mem = psutil.virtual_memory()
     resource.setrlimit(
         resource.RLIMIT_DATA, (int(mem.total / 3), resource.RLIM_INFINITY)
     )
