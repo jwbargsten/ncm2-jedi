@@ -10,57 +10,56 @@ from jedi import settings
 
 logger = getLogger(__name__)
 
-import_pat = re.compile(r'^\s*(from|import)')
-callsig_pat = re.compile(r'^\s*(?!from|import).*?[(,]\s*$')
+import_pat = re.compile(r"^\s*(from|import)")
+callsig_pat = re.compile(r"^\s*(?!from|import).*?[(,]\s*$")
 
 
 class Source(Ncm2Source):
-
     def __init__(self, vim):
         Ncm2Source.__init__(self, vim)
 
-        env = vim.vars['ncm2_jedi#environment']
+        env = vim.vars["ncm2_jedi#environment"]
         if not env:
             osenv = os.environ
-            if 'VIRTUAL_ENV' not in osenv and 'CONDA_PREFIX' in osenv:
+            if "VIRTUAL_ENV" not in osenv and "CONDA_PREFIX" in osenv:
                 # if conda is active
-                self._env = jedi.create_environment(osenv['CONDA_PREFIX'])
+                self._env = jedi.create_environment(osenv["CONDA_PREFIX"])
             else:
                 # get_default_environment handles VIRTUAL_ENV
                 self._env = jedi.get_default_environment()
         else:
             self._env = jedi.create_environment(env)
 
-        rc_settings = vim.vars['ncm2_jedi#settings']
+        rc_settings = vim.vars["ncm2_jedi#settings"]
         for name in rc_settings:
             setattr(settings, name, rc_settings[name])
 
-        self._call_sig_hint = vim.vars['ncm2_jedi#call_sig_hint']
+        self._call_sig_hint = vim.vars["ncm2_jedi#call_sig_hint"]
 
     def get_env(self):
         return self._env
 
     def on_complete(self, ctx, lines):
-        path = ctx['filepath']
-        typed = ctx['typed']
-        lnum = ctx['lnum']
-        startccol = ctx['startccol']
-        ccol = ctx['ccol']
+        path = ctx["filepath"]
+        typed = ctx["typed"]
+        lnum = ctx["lnum"]
+        startccol = ctx["startccol"]
+        ccol = ctx["ccol"]
         pos = lnum, len(typed)
 
         # jedi doesn't work on comment
         # https://github.com/roxma/nvim-completion-manager/issues/62
-        if typed.find('#') != -1:
+        if typed.find("#") != -1:
             return
 
         src = "\n".join(lines)
         src = self.get_src(src, ctx)
         if not src.strip():
             # empty src may possibly block jedi execution, don't know why
-            logger.info('ignore empty src [%s]', src)
+            logger.info("ignore empty src [%s]", src)
             return
 
-        logger.info('context [%s]', ctx)
+        logger.info("context [%s]", ctx)
 
         env = self.get_env()
         script = jedi.Script(src, path=path, environment=env)
@@ -70,27 +69,26 @@ class Source(Ncm2Source):
             is_import = True
 
         if callsig_pat.search(typed):
-
             if not self._call_sig_hint:
                 return
 
-            sig_text = ''
+            sig_text = ""
             sig = None
             try:
                 signatures = script.get_signatures(*pos)
-                logger.info('signatures: %s', signatures)
+                logger.info("signatures: %s", signatures)
                 if len(signatures) > 0:
                     sig = signatures[-1]
                     params = [param.description for param in sig.params]
-                    sig_text = sig.name + '(' + ', '.join(params) + ')'
-                    logger.info("signature: %s, name: %s",
-                                sig, sig.name)
-            except Exception as ex:
+                    sig_text = sig.name + "(" + ", ".join(params) + ")"
+                    logger.info("signature: %s, name: %s", sig, sig.name)
+            except Exception:
                 logger.exception("signature text failed %s", sig_text)
 
             if sig_text:
                 matches = [
-                    dict(word='', empty=1, abbr=sig_text, dup=1), ]
+                    dict(word="", empty=1, abbr=sig_text, dup=1),
+                ]
                 # refresh=True
                 # call signature popup doesn't need to be cached by the
                 # framework
@@ -98,57 +96,61 @@ class Source(Ncm2Source):
             return
 
         completions = script.complete(*pos)
-        logger.info('completions %s', completions)
+        logger.info("completions %s", completions)
 
         matches = []
 
         for complete in completions:
-
             insert = complete.complete
-            # signature error seems to occur even in the 
+            # signature error seems to occur even in the
             # docstring function
             try:
                 docstring = complete.docstring()
             except AssertionError:
                 logger.error(
-                    'signature error in docstring-generation for {}'.format(complete))
-                docstring = ''
+                    "signature error in docstring-generation for {}".format(complete)
+                )
+                docstring = ""
 
-            item = dict(word=ctx['base'] + insert,
-                        icase=1,
-                        dup=1,
-                        menu=complete.description,
-                        info=docstring)
+            item = dict(
+                word=ctx["base"] + insert,
+                icase=1,
+                dup=1,
+                menu=complete.description,
+                info=docstring,
+            )
 
             # Fix the user typed case
-            if item['word'].lower() == complete.name.lower():
-                item['word'] = complete.name
+            if item["word"].lower() == complete.name.lower():
+                item["word"] = complete.name
 
             item = self.match_formalize(ctx, item)
 
             # snippet support
             try:
-                if (complete.type == 'function' or complete.type == 'class'):
+                if complete.type == "function" or complete.type == "class":
                     self.render_snippet(item, complete, is_import)
-            except Exception as ex:
+            except Exception:
                 logger.exception(
-                    "exception parsing snippet for item: %s, complete: %s", item, complete)
+                    "exception parsing snippet for item: %s, complete: %s",
+                    item,
+                    complete,
+                )
 
             matches.append(item)
 
-        logger.info('matches %s', matches)
+        logger.info("matches %s", matches)
         # workaround upstream issue by letting refresh=True. #116
         self.complete(ctx, startccol, matches)
 
-
     def render_snippet(self, item, complete, is_import):
-
         try:
             doc = complete.docstring()
         except AssertionError:
             logger.error(
-                'signature error in docstring-generation for {}'.format(complete))
-            doc = ''
+                "signature error in docstring-generation for {}".format(complete)
+            )
+            doc = ""
 
         # This line has performance issue
         # https://github.com/roxma/nvim-completion-manager/issues/126
@@ -156,32 +158,35 @@ class Source(Ncm2Source):
 
         fundef = doc.split("\n")[0]
 
-        params = re.search(r'(?:_method|' + re.escape(complete.name) + ')' + r'\((.*)\)', fundef)
+        params = re.search(
+            r"(?:_method|" + re.escape(complete.name) + ")" + r"\((.*)\)", fundef
+        )
 
         if params:
-            item['menu'] = fundef
+            item["menu"] = fundef
 
-        logger.debug("building snippet [%s] type[%s] doc [%s]", item['word'], complete.type, doc)
+        logger.debug(
+            "building snippet [%s] type[%s] doc [%s]", item["word"], complete.type, doc
+        )
 
         if params and not is_import:
-
             num = 1
             placeholders = []
-            snip_args = ''
+            snip_args = ""
 
             params = params.group(1)
-            if params != '':
-                params = params.split(',')
+            if params != "":
+                params = params.split(",")
                 cnt = 0
                 for param in params:
                     cnt += 1
-                    if "=" in param or "*" in param or param[0] == '[':
+                    if "=" in param or "*" in param or param[0] == "[":
                         break
                     else:
-                        name = param.strip('[').strip(' ')
+                        name = param.strip("[").strip(" ")
 
                         # Note: this is not accurate
-                        if cnt==1 and (name=='self' or name=='cls'):
+                        if cnt == 1 and (name == "self" or name == "cls"):
                             continue
 
                         ph = self.snippet_placeholder(num, name)
@@ -192,37 +197,40 @@ class Source(Ncm2Source):
                         if "[" in param:
                             break
 
-                snip_args = ', '.join(placeholders)
+                snip_args = ", ".join(placeholders)
                 if len(placeholders) == 0:
                     # don't jump out of parentheses if function has
                     # parameters
                     snip_args = self.snippet_placeholder(1)
 
             ph0 = self.snippet_placeholder(0)
-            snippet = '%s(%s)%s' % (item['word'], snip_args, ph0)
+            snippet = "%s(%s)%s" % (item["word"], snip_args, ph0)
 
-            item['user_data']['is_snippet'] = 1
-            item['user_data']['snippet'] = snippet
-            logger.debug('snippet: [%s] placeholders: %s', snippet, placeholders)
+            item["user_data"]["is_snippet"] = 1
+            item["user_data"]["snippet"] = snippet
+            logger.debug("snippet: [%s] placeholders: %s", snippet, placeholders)
 
-    def snippet_placeholder(self, num, txt=''):
-        txt = txt.replace('\\', '\\\\')
-        txt = txt.replace('$', r'\$')
-        txt = txt.replace('}', r'\}')
-        if txt == '':
-            return '${%s}' % num
-        return '${%s:%s}'  % (num, txt)
+    def snippet_placeholder(self, num, txt=""):
+        txt = txt.replace("\\", "\\\\")
+        txt = txt.replace("$", r"\$")
+        txt = txt.replace("}", r"\}")
+        if txt == "":
+            return "${%s}" % num
+        return "${%s:%s}" % (num, txt)
+
 
 try:
     # set RLIMIT_DATA
     # https://github.com/roxma/nvim-completion-manager/issues/62
     import resource
     import psutil
-    mem = psutil.virtual_memory()
-    resource.setrlimit(resource.RLIMIT_DATA,
-                       (mem.total/3, resource.RLIM_INFINITY))
-except Exception as ex:
-    logger.exception('set RLIMIT_DATA failed')
+
+    mem, *_ = psutil.virtual_memory()
+    resource.setrlimit(
+        resource.RLIMIT_DATA, (int(mem.total / 3), resource.RLIM_INFINITY)
+    )
+except Exception:
+    logger.exception("set RLIMIT_DATA failed")
 
 source = Source(vim)
 
